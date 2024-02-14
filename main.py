@@ -1,34 +1,40 @@
-from typing import List
+from fastapi import FastAPI, Depends
+from fastapi_users import FastAPIUsers
 
-from fastapi import FastAPI
-from pydantic import BaseModel, Field
+from auth.auth import auth_backend
+from auth.database import User
+from auth.manager import get_user_manager
+from auth.schemas import UserRead, UserCreate
 
 app = FastAPI(
     title="Bike Marketplace"
 )
 
+fastapi_users = FastAPIUsers[User, int](
+    get_user_manager,
+    [auth_backend],
+)
 
-fake_bikes = [
-    {'id': 1, 'brand': 'Honda', 'model': "CBR600", "price": 5000},
-    {'id': 2, 'brand': 'YAMAHA', 'model': "MT09 SP", "price": 7500},
-    {'id': 3, 'brand': 'Kawasaki', 'model': "ZX6-R", "price": 3550.50},
-]
+app.include_router(
+    fastapi_users.get_auth_router(auth_backend),
+    prefix="/auth/jwt",
+    tags=["auth"],
+)
+
+app.include_router(
+    fastapi_users.get_register_router(UserRead, UserCreate),
+    prefix="/auth",
+    tags=["auth"],
+)
+
+current_user = fastapi_users.current_user()
 
 
-class Bike(BaseModel):
-    id: int
-    brand: str
-    model: str
-    price: float = Field(ge=0)
+@app.get("/protected-route")
+def protected_route(user: User = Depends(current_user)):
+    return f"Hello, {user.first_name} {user.last_name}"
 
 
-@app.get('/bikes/{bike_id}', response_model=List[Bike])
-def get_bike(bike_id: int):
-    return [bike for bike in fake_bikes if bike.get('id') == bike_id]
-
-
-@app.post('/bikes')
-def add_bikes(bikes: List[Bike]):
-    fake_bikes.extend(bikes)
-    return {"status": 200, "data": fake_bikes}
-
+@app.get("/unprotected-route")
+def unprotected_route():
+    return f"Hello, anonim"
